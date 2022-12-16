@@ -36,6 +36,42 @@ $ helm install my-release \
 The default configuration includes the required PostgreSQL and Redis database
 services, but either or both may be managed externally if required.
 
+### Production Usage
+
+Always [use an existing Secret](#using-an-existing-secret) and supply all
+passwords and secret keys yourself to avoid Helm re-generating any of them for
+you.
+
+I strongly recommend setting both `postgresql.enabled` and `redis.enabled` to
+`false` and using a separate external PostgreSQL and Redis instance. This
+de-couples those services from the chart's bundled versions which may have
+complex upgrade requirements. I also recommend using a clustered PostgreSQL
+server (e.g. using Zalando's
+[Postgres Operator](https://github.com/zalando/postgres-operator)) and Redis
+with Sentinel (e.g. using [Aaron Layfield](https://github.com/DandyDeveloper)'s
+[redis-ha chart](https://github.com/DandyDeveloper/charts/tree/master/charts/redis-ha)).
+
+Set `persistence.enabled` to `false` and use the S3 `storageBackend` for object
+storage. This works well with Minio or Ceph RGW as well as Amazon S3.
+
+Run multiple replicas of the NetBox web front-end to avoid interruptions during
+upgrades or at other times when the pods need to be restarted. There's no need
+to have multiple workers (`worker.replicaCount`) for better availability. Set
+up `affinity.podAntiAffinity` to avoid multiple NetBox pods being colocated on
+the same node, for example:
+
+```
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/instance: netbox
+            app.kubernetes.io/name: netbox
+            app.kubernetes.io/component: netbox
+        topologyKey: kubernetes.io/hostname
+```
+
 ## Uninstalling the Chart
 
 To delete the chart:
@@ -50,7 +86,7 @@ $ helm delete my-release
 
 When upgrading or changing settings and using the bundled Bitnami PostgreSQL
 sub-chart, you **must** provide the `postgresql.postgresqlPassword` at minimum.
-Ideally you should also upply the `postgresql.postgresqlPostgresPassword` and,
+Ideally you should also supply the `postgresql.postgresqlPostgresPassword` and,
 if using replication, the `postgresql.replication.password`. Please see the
 [upstream documentation](https://github.com/bitnami/charts/tree/master/bitnami/postgresql#upgrading)
 for further information.
@@ -105,29 +141,39 @@ The following table lists the configurable parameters for this chart and their d
 | `skipStartupScripts`                            | Skip [netbox-docker startup scripts]                                | `true`                                       |
 | `allowedHosts`                                  | List of valid FQDNs for this NetBox instance                        | `["*"]`                                      |
 | `admins`                                        | List of admins to email about critical errors                       | `[]`                                         |
+| `authPasswordValidators`                        | Configure validation of local user account passwords                | `[]`                                         |
 | `allowedUrlSchemes`                             | URL schemes that are allowed within links in NetBox                 | *see `values.yaml`*                          |
 | `banner.top`                                    | Banner text to display at the top of every page                     | `""`                                         |
 | `banner.bottom`                                 | Banner text to display at the bottom of every page                  | `""`                                         |
 | `banner.login`                                  | Banner text to display on the login page                            | `""`                                         |
 | `basePath`                                      | Base URL path if accessing NetBox within a directory                | `""`                                         |
 | `changelogRetention`                            | Maximum number of days to retain logged changes (0 = forever)       | `90`                                         |
+| `customValidators`                              | Custom validators for NetBox field values                           | `{}`                                         |
+| `defaultUserPreferences`                        | Default preferences for newly created user accounts                 | `{}`                                         |
 | `cors.originAllowAll`                           | [CORS]: allow all origins                                           | `false`                                      |
 | `cors.originWhitelist`                          | [CORS]: list of origins authorised to make cross-site HTTP requests | `[]`                                         |
 | `cors.originRegexWhitelist`                     | [CORS]: list of regex strings matching authorised origins           | `[]`                                         |
+| `csrf.cookieName`                               | Name of the CSRF authentication cookie                              | `csrftoken`                                  |
+| `csrf.trustedOrigins`                           | A list of trusted origins for unsafe (e.g. POST) requests           | `[]`                                         |
 | `debug`                                         | Enable NetBox debugging (NOT for production use)                    | `false`                                      |
+| `dbWaitDebug`                                   | Show details of errors that occur when applying migrations          | `false`                                      |
 | `email.server`                                  | SMTP server to use to send emails                                   | `localhost`                                  |
 | `email.port`                                    | TCP port to connect to the SMTP server on                           | `25`                                         |
 | `email.username`                                | Optional username for SMTP authentication                           | `""`                                         |
 | `email.password`                                | Password for SMTP authentication (see also `existingSecret`)        | `""`                                         |
 | `email.useSSL`                                  | Use SSL when connecting to the server                               | `false`                                      |
 | `email.useTLS`                                  | Use TLS when connecting to the server                               | `false`                                      |
+| `email.sslCertFile`                             | SMTP SSL certificate file path (e.g. in a mounted volume)           | `""`                                         |
+| `email.sslKeyFile`                              | SMTP SSL key file path (e.g. in a mounted volume)                   | `""`                                         |
 | `email.timeout`                                 | Timeout for SMTP connections, in seconds                            | `10`                                         |
 | `email.from`                                    | Sender address for emails sent by NetBox                            | `""`                                         |
 | `enforceGlobalUnique`                           | Enforce unique IP space in the global table (not in a VRF)          | `false`                                      |
 | `exemptViewPermissions`                         | A list of models to exempt from the enforcement of view permissions | `[]`                                         |
+| `fieldChoices`                                  | Configure custom choices for certain built-in fields                | `{}`                                         |
 | `graphQlEnabled`                                | Enable the GraphQL API                                              | `true`                                       |
 | `httpProxies`                                   | HTTP proxies NetBox should use when sending outbound HTTP requests  | `null`                                       |
 | `internalIPs`                                   | IP addresses recognized as internal to the system                   | `['127.0.0.1', '::1']`                       |
+| `jobResultRetention`                            | The number of days to retain job results (scripts and reports)      | `90`                                         |
 | `logging`                                       | Custom Django logging configuration                                 | `{}`                                         |
 | `loginPersistence`                              | Enables users to remain authenticated to NetBox indefinitely        | `false`                                      |
 | `loginRequired`                                 | Permit only logged-in users to access NetBox                        | `false` (unauthenticated read-only access)   |
@@ -145,6 +191,9 @@ The following table lists the configurable parameters for this chart and their d
 | `paginateCount`                                 | The default number of objects to display per page in the web UI     | `50`                                         |
 | `plugins`                                       | Additional plugins to load into NetBox                              | `[]`                                         |
 | `pluginsConfig`                                 | Configuration for the additional plugins                            | `{}`                                         |
+| `powerFeedDefaultAmperage`                      | Default amperage value for new power feeds                          | `15`                                         |
+| `powerFeedMaxUtilisation`                       | Default maximum utilisation percentage for new power feeds          | `80`                                         |
+| `powerFeedDefaultVoltage`                       | Default voltage value for new power feeds                           | `120`                                        |
 | `preferIPv4`                                    | Prefer devices' IPv4 address when determining their primary address | `false`                                      |
 | `rackElevationDefaultUnitHeight`                | Rack elevation default height in pixels                             | `22`                                         |
 | `rackElevationDefaultUnitWidth`                 | Rack elevation default width in pixels                              | `220`                                        |
@@ -257,6 +306,13 @@ The following table lists the configurable parameters for this chart and their d
 | `securityContext`                               | Security context for NetBox containers                              | *see `values.yaml`*                          |
 | `service.type`                                  | Type of `Service` resource to create                                | `ClusterIP`                                  |
 | `service.port`                                  | Port number for the service                                         | `80`                                         |
+| `service.nodePort`                              | The port used on the node when `service.type` is NodePort           | `""`                                         |
+| `service.clusterIP`                             | The cluster IP address assigned to the service                      | `""`                                         |
+| `service.clusterIPs`                            | A list of cluster IP addresses assigned to the service              | `[]`                                         |
+| `service.externalIPs`                           | A list of external IP addresses aliased to this service             | `[]`                                         |
+| `service.externalTrafficPolicy`                 | Policy for routing external traffic                                 | `""`                                         |
+| `service.ipFamilyPolicy`                        | Represents the dual-stack-ness of the service                       | `""`                                         |
+| `service.loadBalancerIP`                        | Request a specific IP address when `service.type` is LoadBalancer   | `""`                                         |
 | `service.loadBalancerSourceRanges`              | A list of allowed IP ranges when `service.type` is LoadBalancer     | `[]`                                         |
 | `ingress.enabled`                               | Create an `Ingress` resource for accessing NetBox                   | `false`                                      |
 | `ingress.className`                             | Use a named IngressClass                                            | `""`                                         |
@@ -264,6 +320,11 @@ The following table lists the configurable parameters for this chart and their d
 | `ingress.hosts`                                 | List of hosts and paths to map to the service (see `values.yaml`)   | `[{host:"chart-example.local",paths:["/"]}]` |
 | `ingress.tls`                                   | TLS settings for the `Ingress` resource                             | `[]`                                         |
 | `resources`                                     | Configure resource requests or limits for NetBox                    | `{}`                                         |
+| `readinessProbe.enabled`                        | Enable Kubernetes readinessProbe, see [readiness probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes) | *see `values.yaml`* |
+| `readinessProbe.initialDelaySeconds`            | Number of seconds                                                   |  *see `values.yaml`*                         |
+| `readinessProbe.timeoutSeconds`                 | Number of seconds                                                   |  *see `values.yaml`*                         |
+| `readinessProbe.periodSeconds`                  | Number of seconds                                                   |  *see `values.yaml`*                         |
+| `readinessProbe.successThreshold`               | Number of seconds                                                   |  *see `values.yaml`*                         |
 | `init.image.repository`                         | Init container image repository                                     | `busybox`                                    |
 | `init.image.tag`                                | Init container image tag                                            | `1.32.1`                                     |
 | `init.image.pullPolicy`                         | Init container image pull policy                                    | `IfNotPresent`                               |
@@ -322,14 +383,70 @@ Rather than specifying passwords and secrets as part of the Helm release values,
 you may pass these to NetBox using a pre-existing `Secret` resource. When using
 this, the `Secret` must contain the following keys:
 
-| Key                    | Description                                            | Required? |
-| -----------------------|--------------------------------------------------------|---------------------------------------------------------------------------------------|
-| `db_password`          | The password for the external PostgreSQL database      | If `postgresql.enabled` is `false` and `externalDatabase.existingSecretName` is unset |
-| `email_password`       | SMTP user password                                     | Yes, but the value may be left blank if not required                                  |
-| `napalm_password`      | NAPALM user password                                   | Yes, but the value may be left blank if not required                                  |
-| `redis_tasks_password` | Password for the external Redis tasks database         | If `redis.enabled` is `false` and `tasksRedis.existingSecretName` is unset            |
-| `redis_cache_password` | Password for the external Redis cache database         | If `redis.enabled` is `false` and `cachingRedis.existingSecretName` is unset          |
-| `secret_key`           | Django session and password reset token encryption key | Yes, and should be 50+ random characters                                              |
+| Key                    | Description                                                   | Required?                                                                                         |
+| -----------------------|---------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `db_password`          | The password for the external PostgreSQL database             | If `postgresql.enabled` is `false` and `externalDatabase.existingSecretName` is unset             |
+| `email_password`       | SMTP user password                                            | Yes, but the value may be left blank if not required                                              |
+| `ldap_bind_password`   | Password for LDAP bind DN                                     | If `remoteAuth.enabled` is `true` and `remoteAuth.backend` is `netbox.authentication.LDAPBackend` |
+| `napalm_password`      | NAPALM user password                                          | Yes, but the value may be left blank if not required                                              |
+| `redis_tasks_password` | Password for the external Redis tasks database                | If `redis.enabled` is `false` and `tasksRedis.existingSecretName` is unset                        |
+| `redis_cache_password` | Password for the external Redis cache database                | If `redis.enabled` is `false` and `cachingRedis.existingSecretName` is unset                      |
+| `secret_key`           | Django secret key used for sessions and password reset tokens | Yes                                                                                               |
+| `superuser_password`   | Password for the initial super-user account                   | Yes                                                                                               |
+| `superuser_api_token`  | API token created for the initial super-user account          | Yes                                                                                               |
+
+## Using extraConfig for S3 storage configuration
+
+If you want to use S3 as your storage backend and not have the config in the `values.yaml` (credentials!)
+you can use an existing secret that is then referenced under the `extraConfig` key.
+
+The secret would look like this:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/instance: netbox
+  name: netbox-extra
+stringData:
+  s3-config.yaml: |
+    STORAGE_CONFIG:
+      AWS_S3_ENDPOINT_URL: <endpoint-URL>
+      AWS_S3_REGION_NAME: <region>
+      AWS_STORAGE_BUCKET_NAME: <bucket-name>
+      AWS_ACCESS_KEY_ID: <access-key>
+      AWS_SECRET_ACCESS_KEY: <secret-key>
+```
+
+And the secret then has to be referenced like this:
+
+```yaml
+extraConfig:
+  - secret: # same as pod.spec.volumes.secret
+      secretName: netbox-extra
+```
+
+## Configuring SSO
+
+You can leverage the `extraConfig` value in conjunction with `remoteAuth` to configure SSO. An example:
+
+```yaml
+remoteAuth:
+  enabled: true
+  backend: social_core.backends.keycloak.KeycloakOAuth2
+  autoCreateUser: false
+
+extraConfig:
+  - values:
+      SOCIAL_AUTH_KEYCLOAK_KEY: 'netbox'
+      SOCIAL_AUTH_KEYCLOAK_SECRET: 'HaveANiceDay'
+      SOCIAL_AUTH_KEYCLOAK_PUBLIC_KEY: 'MII....'
+      SOCIAL_AUTH_KEYCLOAK_AUTHORIZATION_URL: 'https://keycloak.yourdomain.com/auth/realms/YourRealm/protocol/openid-connect/auth'
+      SOCIAL_AUTH_KEYCLOAK_ACCESS_TOKEN_URL: 'https://keycloak.yourdomain.com/auth/realms/YourRealm/protocol/openid-connect/token'
+      SOCIAL_AUTH_KEYCLOAK_ID_KEY: 'email'
+      SOCIAL_AUTH_JSONFIELD_ENABLED: True
+```
 
 ## Using LDAP Authentication
 

@@ -15,6 +15,18 @@ data:
 
     from pathlib import Path
 
+    def _deep_merge(source, destination):
+      """Inspired by https://stackoverflow.com/a/20666342"""
+      for key, value in source.items():
+        dst_value = destination.get(key)
+
+        if isinstance(value, dict) and isinstance(dst_value, dict):
+          _deep_merge(value, dst_value)
+        else:
+          destination[key] = value
+
+      return destination
+
     def _load_yaml():
       extraConfigBase = Path('/run/config/extra')
       configFiles = [Path('/run/config/netbox/netbox.yaml')]
@@ -25,7 +37,7 @@ data:
         with open(configFile, 'r') as f:
           config = yaml.safe_load(f)
 
-        globals().update(config)
+        _deep_merge(config, globals())
 
     def _load_secret(name, key):
       path = "/run/secrets/{name}/{key}".format(name=name, key=key)
@@ -70,18 +82,24 @@ data:
       {{- end }}
       OPTIONS:
         sslmode: {{ .Values.externalDatabase.sslMode | quote }}
+        target_session_attrs: 'read-write'
       CONN_MAX_AGE: {{ .Values.externalDatabase.connMaxAge | int }}
+      DISABLE_SERVER_SIDE_CURSORS: {{ toJson .Values.externalDatabase.disableServerSideCursors }}
 
     ADMINS: {{ toJson .Values.admins }}
+    AUTH_PASSWORD_VALIDATORS: {{ toJson .Values.authPasswordValidators }}
     ALLOWED_URL_SCHEMES: {{ toJson .Values.allowedUrlSchemes }}
     BANNER_TOP: {{ .Values.banner.top | quote }}
     BANNER_BOTTOM: {{ .Values.banner.bottom | quote }}
     BANNER_LOGIN: {{ .Values.banner.login | quote }}
     BASE_PATH: {{ .Values.basePath | quote }}
     CHANGELOG_RETENTION: {{ int .Values.changelogRetention }}
+    CUSTOM_VALIDATORS: {{ toJson .Values.customValidators }}
+    DEFAULT_USER_PREFERENCES: {{ toJson .Values.defaultUserPreferences }}
     CORS_ORIGIN_ALLOW_ALL: {{ toJson .Values.cors.originAllowAll }}
     CORS_ORIGIN_WHITELIST: {{ toJson .Values.cors.originWhitelist }}
     CORS_ORIGIN_REGEX_WHITELIST: {{ toJson .Values.cors.originRegexWhitelist }}
+    CSRF_TRUSTED_ORIGINS: {{ toJson .Values.csrf.trustedOrigins }}
     DEBUG: {{ toJson .Values.debug }}
 
     EMAIL:
@@ -90,14 +108,18 @@ data:
       USERNAME: {{ .Values.email.username | quote }}
       USE_SSL: {{ toJson .Values.email.useSSL }}
       USE_TLS: {{ toJson .Values.email.useTLS }}
+      SSL_CERTFILE: {{ .Values.email.sslCertFile | quote }}
+      SSL_KEYFILE: {{ .Values.email.sslKeyFile | quote }}
       TIMEOUT: {{ .Values.email.timeout | int }}
       FROM_EMAIL: {{ toJson .Values.email.from }}
 
     ENFORCE_GLOBAL_UNIQUE: {{ toJson .Values.enforceGlobalUnique }}
     EXEMPT_VIEW_PERMISSIONS: {{ toJson .Values.exemptViewPermissions }}
+    FIELD_CHOICES: {{ toJson .Values.fieldChoices }}
     GRAPHQL_ENABLED: {{ toJson .Values.graphQlEnabled }}
     HTTP_PROXIES: {{ toJson .Values.httpProxies }}
     INTERNAL_IPS: {{ toJson .Values.internalIPs }}
+    JOBRESULT_RETENTION: {{ int .Values.jobResultRetention }}
     LOGGING: {{ toJson .Values.logging }}
     LOGIN_PERSISTENCE: {{ toJson .Values.loginPersistence }}
     LOGIN_REQUIRED: {{ toJson .Values.loginRequired }}
@@ -115,6 +137,9 @@ data:
     PAGINATE_COUNT: {{ int .Values.paginateCount }}
     PLUGINS: {{ toJson .Values.plugins }}
     PLUGINS_CONFIG: {{ toJson .Values.pluginsConfig }}
+    POWERFEED_DEFAULT_AMPERAGE: {{ int .Values.powerFeedDefaultAmperage }}
+    POWERFEED_DEFAULT_MAX_UTILIZATION: {{ int .Values.powerFeedMaxUtilisation }}
+    POWERFEED_DEFAULT_VOLTAGE: {{ int .Values.powerFeedDefaultVoltage }}
     PREFER_IPV4: {{ toJson .Values.preferIPv4 }}
     RACK_ELEVATION_DEFAULT_UNIT_HEIGHT: {{ int .Values.rackElevationDefaultUnitHeight }}
     RACK_ELEVATION_DEFAULT_UNIT_WIDTH: {{ int .Values.rackElevationDefaultUnitWidth }}
@@ -135,14 +160,14 @@ data:
 
     REDIS:
       tasks:
-        {{ if .Values.redis.enabled -}}
+        {{- if .Values.redis.enabled }}
         HOST: {{ printf "%s-master" (include "netbox.redis.fullname" .) | quote }}
         PORT: {{ .Values.redis.master.service.port | int }}
-        {{- else if .Values.tasksRedis.sentinels -}}
+        {{- else if .Values.tasksRedis.sentinels }}
         SENTINELS: {{ toJson .Values.tasksRedis.sentinels }}
         SENTINEL_SERVICE: {{ .Values.tasksRedis.sentinelService | quote }}
         SENTINEL_TIMEOUT: {{ .Values.tasksRedis.sentinelTimeout | int }}
-        {{- else -}}
+        {{- else }}
         HOST: {{ .Values.tasksRedis.host | quote }}
         PORT: {{ .Values.tasksRedis.port | int}}
         {{- end }}
@@ -150,14 +175,14 @@ data:
         SSL: {{ toJson .Values.tasksRedis.ssl }}
         INSECURE_SKIP_TLS_VERIFY: {{ toJson .Values.tasksRedis.insecureSkipTlsVerify }}
       caching:
-        {{ if .Values.redis.enabled -}}
+        {{- if .Values.redis.enabled }}
         HOST: {{ printf "%s-master" (include "netbox.redis.fullname" .) | quote }}
         PORT: {{ .Values.redis.master.service.port | int }}
-        {{- else if .Values.cachingRedis.sentinels -}}
+        {{- else if .Values.cachingRedis.sentinels }}
         SENTINELS: {{ toJson .Values.cachingRedis.sentinels }}
         SENTINEL_SERVICE: {{ .Values.cachingRedis.sentinelService | quote }}
         SENTINEL_TIMEOUT: {{ .Values.cachingRedis.sentinelTimeout | int }}
-        {{- else -}}
+        {{- else }}
         HOST: {{ .Values.cachingRedis.host | quote }}
         PORT: {{ .Values.cachingRedis.port | int}}
         {{- end }}
@@ -168,6 +193,7 @@ data:
     REPORTS_ROOT: /opt/netbox/netbox/reports
     RQ_DEFAULT_TIMEOUT: {{ .Values.rqDefaultTimeout | int }}
     SCRIPTS_ROOT: /opt/netbox/netbox/scripts
+    CSRF_COOKIE_NAME: {{ .Values.csrf.cookieName | quote }}
     SESSION_COOKIE_NAME: {{ .Values.sessionCookieName }}
     TIME_ZONE: {{ .Values.timeZone | quote }}
     DATE_FORMAT: {{ .Values.dateFormat | quote }}

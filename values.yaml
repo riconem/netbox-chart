@@ -10,6 +10,8 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
+# You can also use an existing secret for the superuser password and API token
+# See `existingSecret` for details
 superuser:
   name: admin
   email: admin@example.com
@@ -34,6 +36,13 @@ allowedHosts:
 admins: []
   # - ['John Doe', 'jdoe@example.com']
 
+# This parameter acts as a pass-through for configuring Django's built-in
+# password validators for local user accounts. If configured, these will be
+# applied whenever a user's password is updated to ensure that it meets minimum
+# criteria such as length or complexity.
+# https://docs.netbox.dev/en/stable/configuration/optional-settings/#auth_password_validators
+authPasswordValidators: []
+
 # URL schemes that are allowed within links in NetBox
 allowedUrlSchemes: [file, ftp, ftps, http, https, irc, mailto, sftp, ssh, tel,
                     telnet, tftp, vnc, xmpp]
@@ -56,6 +65,18 @@ basePath: ''
 # logs indefinitely. (Default: 90)
 changelogRetention: 90
 
+# This is a mapping of models to custom validators that have been defined
+# locally to enforce custom validation logic.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#custom_validators
+customValidators: {}
+
+# This is a dictionary defining the default preferences to be set for newly-
+# created user accounts.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#default_user_preferences
+defaultUserPreferences: {}
+  # pagination:
+  #   per_page: 100
+
 # API Cross-Origin Resource Sharing (CORS) settings. If originAllowAll
 # is set to true, all origins will be allowed. Otherwise, define a list of
 # allowed origins using either originWhitelist or originRegexWhitelist. For
@@ -65,6 +86,17 @@ cors:
   originWhitelist: []
   originRegexWhitelist: []
   #  - '^(https?://)?(\w+\.)?example\.com$'
+
+# CSRF settings.  Needed for netbox v3.2.0 and newer. For more information
+# see https://docs.netbox.dev/en/stable/configuration/optional-settings/#csrf_trusted_origins
+csrf:
+  # The name of the cookie to use for the cross-site request forgery (CSRF)
+  # authentication token.
+  cookieName: csrftoken
+  # Defines a list of trusted origins for unsafe (e.g. POST) requests. This is
+  # a pass-through to Django's CSRF_TRUSTED_ORIGINS setting. Note that each
+  # host listed must specify a scheme (e.g. http:// or `https://).
+  trustedOrigins: []
 
 # Note: this is where the CUSTOM_VALIDATORS setting naturally fits in relation
 # to the upstream NetBox configuration, but the setting cannot be reflected in
@@ -76,6 +108,10 @@ cors:
 # enable debugging on a production system.
 debug: false
 
+# Display full traceback of errors that occur when applying database
+# migrations.
+dbWaitDebug: false
+
 # Email settings
 email:
   server: localhost
@@ -84,6 +120,8 @@ email:
   password: ''
   useSSL: false
   useTLS: false
+  sslCertFile: ''
+  sslKeyFile: ''
   timeout: 10  # seconds
   from: ''
 
@@ -100,6 +138,18 @@ exemptViewPermissions: []
 #  - dcim.region
 #  - ipam.prefix
 
+# Some static choice fields on models can be configured with custom values.
+# Each choice in the list must have a database value and a human-friendly
+# label, and may optionally specify a color.
+# https://docs.netbox.dev/en/stable/configuration/optional-settings/#field_choices
+fieldChoices: {}
+  # 'dcim.Site.status':
+  #   - [foo, Foo, red]
+  #   - [bar, Bar, green]
+  #   - [baz, Baz, blue]
+  # 'dcim.Site.status+':
+  #   ...
+
 # Enable the GraphQL API
 graphQlEnabled: true
 
@@ -112,6 +162,11 @@ httpProxies: null
 # IP addresses recognized as internal to the system. The debugging toolbar will
 # be available only to clients accessing NetBox from an internal IP.
 internalIPs: ['127.0.0.1', '::1']
+
+# The number of days to retain job results (scripts and reports). Set this to 0
+# to retain job results in the database indefinitely.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#jobresult_retention
+jobResultRetention: 90
 
 # Enable custom logging. Please see the Django documentation for detailed
 # guidance on configuring custom logs:
@@ -152,6 +207,7 @@ storageConfig: {}
   # AWS_ACCESS_KEY_ID: 'Key ID'
   # AWS_SECRET_ACCESS_KEY: 'Secret'
   # AWS_STORAGE_BUCKET_NAME: 'netbox'
+  # AWS_S3_ENDPOINT_URL: 'endpoint URL of S3 provider'
   # AWS_S3_REGION_NAME: 'eu-west-1'
 
 # Expose Prometheus monitoring metrics at the HTTP endpoint '/metrics'
@@ -180,6 +236,19 @@ plugins: []
 # that the user may have installed. Each key in the dictionary is the name of
 # an installed plugin and its value is a dictionary of settings.
 pluginsConfig: {}
+
+# The default value for the amperage field when creating new power feeds.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#powerfeed_default_amperage
+powerFeedDefaultAmperage: 15
+
+# The default value (percentage) for the max_utilization field when creating
+# new power feeds.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#powerfeed_default_max_utilization
+powerFeedMaxUtilisation: 80
+
+# The default value for the voltage field when creating new power feeds.
+# https://docs.netbox.dev/en/stable/configuration/dynamic-settings/#powerfeed_default_voltage
+powerFeedDefaultVoltage: 120
 
 # When determining the primary IP address for a device, IPv6 is preferred over
 # IPv4 by default. Set this to True to prefer IPv4 instead.
@@ -280,6 +349,8 @@ extraConfig: []
 
 # If provided, this should be a 50+ character string of random characters. It
 # will be randomly generated if left blank.
+# You can also use an existing secret with "secret_key" instead of "secretKey"
+# See `existingSecret` for details
 secretKey: ""
 
 ## Provide passwords using existing secret
@@ -287,12 +358,15 @@ secretKey: ""
 # - db_password: database password (if postgresql.enabled is false and
 #     externalDatabase.existingSecretName is blank)
 # - email_password: SMTP user password
+# - ldap_bind_password: Password for LDAP bind DN
 # - napalm_password: NAPALM user password
 # - redis_tasks_password: Redis password for tasks Redis instance (if
 #     redis.enabled is false and tasksRedis.existingSecretName is blank)
 # - redis_cache_password: Redis password for caching Redis instance (if
 #     redis.enabled is false and cachingRedis.existingSecretName is blank)
 # - secret_key: session encryption token (50+ random characters)
+# - superuser_password: Password for the initial super-user account
+# - superuser_api_token: API token created for the initial super-user account
 existingSecret: ""
 
 postgresql:
@@ -315,9 +389,10 @@ externalDatabase:
   existingSecretName: ""
   existingSecretKey: postgresql-password
 
-  # The following settings apply when using the bundled PostgreSQL chart, too:
+  # The following settings also apply when using the bundled PostgreSQL chart:
   sslMode: prefer
   connMaxAge: 300
+  disableServerSideCursors: false
 
 redis:
   ## Deploy Redis using bundled chart
@@ -454,6 +529,13 @@ service:
     # service.beta.kubernetes.io/aws-load-balancer-ssl-ports: http
   type: ClusterIP
   port: 80
+  nodePort: ""
+  clusterIP: ""
+  clusterIPs: []
+  externalIPs: []
+  externalTrafficPolicy: ""
+  ipFamilyPolicy: ""
+  loadBalancerIP: ""
   loadBalancerSourceRanges: []
   # - 10.0.0.0/8
 
@@ -496,6 +578,13 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 0
+  timeoutSeconds: 1
+  periodSeconds: 10
+  successThreshold: 1
 
 init:
   image:
